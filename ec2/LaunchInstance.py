@@ -1,42 +1,79 @@
 import boto3
+import json
+
+# Read config file
+with open("config.json") as file:
+    configuration = json.load(file)
 
 client = boto3.client("ec2")
 
 
 class LaunchInstance:
-    def __init__(self, instance_type, image_id, key_name, security_group_id):
-        self.instance_type = instance_type
-        self.image_id = image_id
-        self.key_name = key_name
-        self.security_group_id = security_group_id
+    def __init__(self):
+        self.instance_type = configuration.instance_type
+        self.security_group_id = self.create_security_group()
+
+    def create_security_group(self):
+        security_group_name = "web-security-group"
+        sec_groups = client.describe_security_groups()["SecurityGroups"]
+        for sec_group in sec_groups:
+            if sec_group.get("GroupName") == security_group_name:
+                return sec_group["GroupId"]
+
+        response = client.create_security_group(
+            GroupName="web-security-group",
+            Description="Launch a web server",
+        )
+
+        security_group_id = response["GroupId"]
+
+        print("Created security group with ID: " + security_group_id)
+
+        # Add a rule to the security group to allow HTTP ingress
+        client.authorize_security_group_ingress(
+            GroupId=security_group_id,
+            IpPermissions=[
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 80,
+                    "ToPort": 80,
+                    "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
+                    "Ipv6Ranges": [{"CidrIpv6": "::/0"}],
+                }
+            ],
+        )
+        return security_group_id
 
     """
         function to launch an ec2 instance
         @ return instance_id
     """
+
     def launch(self):
         response = client.run_instances(
-            ImageId=self.image_id,
             InstanceType=self.instance_type,
-            KeyName=self.key_name,
             SecurityGroupIds=[self.security_group_id],
         )
 
-        # Wait for instance to start running
-        waiter = client.get_waiter(
-            "instance_running",
-            {"InstanceIds": [response["Instances"][0]["InstanceId"]]},
-        )
-        waiter.wait()
+        instance = response["Instances"][0]
 
-        instance_state = client.describe_instance_status(
-            InstanceIds=[response["Instances"][0]["InstanceId"]]
-        )
+        # Wait for instance to start running
+        waiter = client.get_waiter("instance_running")
+        waiter.wait(InstanceIds=[instance["InstanceId"]])
+
+        # Reload instance data
+        instance.load()
 
         print(
             "Launched instance with ID: "
             + response["Instances"][0]["InstanceId"]
             + " and state: "
-            + instance_state["InstanceStatuses"][0]["InstanceState"]["Name"]
+            + instance["State"]["Name"]
         )
-        return response["Instances"][0]["InstanceId"]
+
+        return instance
+
+
+if __name__ == "__main__":
+    pass
+    # main()
