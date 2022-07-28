@@ -1,3 +1,5 @@
 {
-    "instance_type": "t2.micro"
+    "instance_type": "t2.micro",
+    "security_group_name": "web-service-sg",
+    "ami": "ami-04537cfe22bace769"
 }
